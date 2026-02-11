@@ -335,3 +335,143 @@ func TestGetValidCategories(t *testing.T) {
 	assert.Equal(t, expected, categories)
 	assert.Len(t, categories, 5)
 }
+
+func TestItem_ApplyPatch(t *testing.T) {
+	// ヘルパー関数
+	strPtr := func(s string) *string { return &s }
+	intPtr := func(i int) *int { return &i }
+
+	tests := []struct {
+		name          string
+		patchName     *string
+		patchBrand    *string
+		patchPrice    *int
+		wantErr       bool
+		expectedErr   string
+		expectedName  string
+		expectedBrand string
+		expectedPrice int
+	}{
+		{
+			name:          "正常系: nameのみ更新",
+			patchName:     strPtr("更新された名前"),
+			patchBrand:    nil,
+			patchPrice:    nil,
+			wantErr:       false,
+			expectedName:  "更新された名前",
+			expectedBrand: "ROLEX",
+			expectedPrice: 1000000,
+		},
+		{
+			name:          "正常系: brandのみ更新",
+			patchName:     nil,
+			patchBrand:    strPtr("OMEGA"),
+			patchPrice:    nil,
+			wantErr:       false,
+			expectedName:  "初期アイテム",
+			expectedBrand: "OMEGA",
+			expectedPrice: 1000000,
+		},
+		{
+			name:          "正常系: purchase_priceのみ更新",
+			patchName:     nil,
+			patchBrand:    nil,
+			patchPrice:    intPtr(2000000),
+			wantErr:       false,
+			expectedName:  "初期アイテム",
+			expectedBrand: "ROLEX",
+			expectedPrice: 2000000,
+		},
+		{
+			name:          "正常系: 複数フィールド同時更新",
+			patchName:     strPtr("新しい名前"),
+			patchBrand:    strPtr("CARTIER"),
+			patchPrice:    intPtr(500000),
+			wantErr:       false,
+			expectedName:  "新しい名前",
+			expectedBrand: "CARTIER",
+			expectedPrice: 500000,
+		},
+		{
+			name:          "正常系: nameの前後空白がトリムされる",
+			patchName:     strPtr("  スペース付き名前  "),
+			patchBrand:    nil,
+			patchPrice:    nil,
+			wantErr:       false,
+			expectedName:  "スペース付き名前",
+			expectedBrand: "ROLEX",
+			expectedPrice: 1000000,
+		},
+		{
+			name:        "異常系: nameを空文字に更新",
+			patchName:   strPtr(""),
+			patchBrand:  nil,
+			patchPrice:  nil,
+			wantErr:     true,
+			expectedErr: "name is required",
+		},
+		{
+			name:        "異常系: brandを空文字に更新",
+			patchName:   nil,
+			patchBrand:  strPtr(""),
+			patchPrice:  nil,
+			wantErr:     true,
+			expectedErr: "brand is required",
+		},
+		{
+			name:        "異常系: purchase_priceを負の値に更新",
+			patchName:   nil,
+			patchBrand:  nil,
+			patchPrice:  intPtr(-100),
+			wantErr:     true,
+			expectedErr: "purchase_price must be 0 or greater",
+		},
+		{
+			name:          "正常系: purchase_priceを0に更新",
+			patchName:     nil,
+			patchBrand:    nil,
+			patchPrice:    intPtr(0),
+			wantErr:       false,
+			expectedName:  "初期アイテム",
+			expectedBrand: "ROLEX",
+			expectedPrice: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 各テストケースで新しいアイテムを作成
+			item, err := NewItem("初期アイテム", "時計", "ROLEX", 1000000, "2023-01-01")
+			require.NoError(t, err)
+
+			originalUpdatedAt := item.UpdatedAt
+			originalCategory := item.Category
+			originalPurchaseDate := item.PurchaseDate
+			originalCreatedAt := item.CreatedAt
+			time.Sleep(1 * time.Millisecond) // UpdatedAtの変更を確認するため
+
+			err = item.ApplyPatch(tt.patchName, tt.patchBrand, tt.patchPrice)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr)
+				return
+			}
+
+			require.NoError(t, err)
+
+			// 更新対象フィールドの値を確認
+			assert.Equal(t, tt.expectedName, item.Name)
+			assert.Equal(t, tt.expectedBrand, item.Brand)
+			assert.Equal(t, tt.expectedPrice, item.PurchasePrice)
+
+			// 不変フィールドが変更されていないことを確認
+			assert.Equal(t, originalCategory, item.Category)
+			assert.Equal(t, originalPurchaseDate, item.PurchaseDate)
+			assert.Equal(t, originalCreatedAt, item.CreatedAt)
+
+			// UpdatedAtが更新されていることを確認
+			assert.True(t, item.UpdatedAt.After(originalUpdatedAt))
+		})
+	}
+}
